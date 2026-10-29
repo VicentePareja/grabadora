@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grabadora</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='%23ef4444'/></svg>">
+<style>
+  :root {
+    --bg: #0d0e12;
+    --panel: #16181f;
+    --line: #262934;
+    --text: #e7e9ee;
+    --muted: #8b90a0;
+    --accent: #ef4444;
+    --accent-dim: #3a1618;
+    --btn: #232631;
+    --btn-hover: #2c303d;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  #status { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #status.live { color: var(--accent); font-weight: 600; }
+
+  main {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+  }
+  .stage {
+    position: relative;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  canvas {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+    background: #000;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+    touch-action: none;
+  }
+  canvas.grab { cursor: grab; }
+  canvas.grabbing { cursor: grabbing; }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .overlay strong { color: var(--text); font-size: 16px; font-weight: 600; }
+  #countdown { font-size: 140px; font-weight: 700; color: #fff; text-shadow: 0 6px 30px rgba(0, 0, 0, .6); }
+
+  aside {
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .group { display: flex; flex-direction: column; gap: 10px; }
+  .group h2 {
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 13px; }
+  label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+  input[type=range] { accent-color: var(--accent); width: 100%; }
+  select, button {
+    font: inherit;
+    color: var(--text);
+    background: var(--btn);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  select { width: 100%; }
+  button { cursor: pointer; font-weight: 500; }
+  button:hover:not(:disabled) { background: var(--btn-hover); }
+  button:disabled, select:disabled { opacity: .45; cursor: not-allowed; }
+  .hint { margin: 0; color: var(--muted); font-size: 12px; }
+
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .controls button { padding: 12px; }
+  #btnRec {
+    grid-column: 1 / -1;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  #btnRec:hover:not(:disabled) { background: #dc2626; }
+
+  #downloads { display: flex; flex-direction: column; gap: 6px; }
+  #downloads a {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text);
+    text-decoration: none;
+    background: var(--btn);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  #downloads a:hover { background: var(--btn-hover); }
+  #downloads a span { color: var(--muted); white-space: nowrap; }
+  #downloads a b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .error { color: #fca5a5; background: var(--accent-dim); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin: 0; }
+
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+    aside { border-left: 0; border-top: 1px solid var(--line); }
+    .stage { padding: 16px; min-height: 50vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>Grabadora</h1>
+  <span id="status">Lista</span>
+</header>
+
+<main>
+  <section class="stage">
+    <canvas id="canvas" width="1920" height="1080"></canvas>
+    <div class="overlay" id="placeholder">
+      <strong>Elige una pantalla para empezar</strong>
+      <span>Tu cámara aparecerá como burbuja encima.</span>
+    </div>
+    <div class="overlay" id="countdown" hidden></div>
+  </section>
+
+  <aside>
+    <div class="group">
+      <h2>Fuentes</h2>
+      <button id="btnScreen">Elegir pantalla</button>
+      <label>Cámara <select id="selCam"></select></label>
+      <label>Micrófono <select id="selMic"></select></label>
+      <p class="error" id="error" hidden></p>
+    </div>
+
+    <div class="group">
+      <h2>Cámara</h2>
+      <label class="check"><input type="checkbox" id="chkCam"> Mostrar cámara</label>
+      <label class="check"><input type="checkbox" id="chkMirror"> Efecto espejo</label>
+      <label>Tamaño <input type="range" id="rngSize" min="12" max="60"></label>
+      <p class="hint">Arrastra la burbuja en la vista previa para moverla.</p>
+    </div>
+
+    <div class="group">
+      <h2>Grabación</h2>
+      <label class="check"><input type="checkbox" id="chkSeparate"> Guardar también cámara y pantalla por separado</label>
+      <div class="controls">
+        <button id="btnRec" disabled>Grabar</button>
+        <button id="btnPause" disabled>Pausar</button>
+        <button id="btnStop" disabled>Detener</button>
+      </div>
+      <p class="hint">Puedes minimizar esta ventana mientras grabas; sigue grabando. Para terminar vuelve aquí o usa “Dejar de compartir”.</p>
+    </div>
+
+    <div class="group" id="downloadsGroup" hidden>
+      <h2>Grabaciones</h2>
+      <div id="downloads"></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('canvas');
+const ctx = canvas.getContext('2d');
+
+const FPS = 30;
+const DEFAULTS = { x: 0.87, y: 0.8, size: 28, showCam: true, mirror: true, separate: false, cam: '', mic: '' };
+const settings = loadSettings();
+
+let screenSrc = null;   // { stream, track, frame | video }
+let camSrc = null;
+let micStream = null;
+let session = null;     // grabación en curso
+
+// ---------- Ajustes ----------
+
+function loadSettings() {
+  try {
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('grabadora') || '{}') };
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
+
+function saveSettings() {
+  try { localStorage.setItem('grabadora', JSON.stringify(settings)); } catch {}
+}
+
+// ---------- Fuentes de video ----------
+
+// Lee los frames directamente del track (no depende de que la pestaña esté visible).
+// Si el navegador no lo soporta, usa un <video> como respaldo.
+function makeSource(stream) {
+  const track = stream.getVideoTracks()[0];
+  const src = { stream, track, frame: null, video: null, closed: false };
+  if ('MediaStreamTrackProcessor' in window) {
+    src.readTrack = track.clone();
+    const reader = new MediaStreamTrackProcessor({ track: src.readTrack }).readable.getReader();
+    src.reader = reader;
+    (async () => {
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (src.closed) { value.close(); break; }
+          src.frame?.close();
+          src.frame = value;
+        }
+      } catch {}
+    })();
+  } else {
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.srcObject = stream;
+    v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.append(v);
+    v.play().catch(() => {});
+    src.video = v;
+  }
+  return src;
+}
+
+function sourceImage(src) {
+  if (!src) return null;
+  if (src.frame) return { img: src.frame, w: src.frame.displayWidth, h: src.frame.displayHeight };
+  const v = src.video;
+  if (v && v.readyState >= 2 && v.videoWidth) return { img: v, w: v.videoWidth, h: v.videoHeight };
+  return null;
+}
+
+function closeSource(src) {
+  if (!src) return;
+  src.closed = true;
+  src.reader?.cancel().catch(() => {});
+  src.readTrack?.stop();
+  src.frame?.close();
+  src.frame = null;
+  src.video?.remove();
+  src.stream.getTracks().forEach((t) => t.stop());
+}
+
+async function pickScreen() {
+  hideError();
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: FPS } },
+      audio: true,
+      systemAudio: 'include',
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'include',
+    });
+    const track = stream.getVideoTracks()[0];
+    track.contentHint = 'detail';
+    track.addEventListener('ended', () => {
+      if (screenSrc?.track !== track) return;
+      if (session) stopRecording();
+      closeSource(screenSrc);
+      screenSrc = null;
+      updateUI();
+    });
+    closeSource(screenSrc);
+    screenSrc = makeSource(stream);
+  } catch (err) {
+    if (err.name !== 'NotAllowedError') showError('No se pudo capturar la pantalla: ' + err.message);
+  }
+  updateUI();
+}
+
+async function startCamera() {
+  closeSource(camSrc);
+  camSrc = null;
+  if (settings.cam === 'none') return;
+  const video = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: FPS } };
+  try {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: settings.cam ? { ...video, deviceId: { exact: settings.cam } } : video,
+      });
+    } catch (err) {
+      if (!settings.cam || err.name === 'NotAllowedError') throw err;
+      stream = await navigator.mediaDevices.getUserMedia({ video }); // la cámara guardada ya no existe
+    }
+    camSrc = makeSource(stream);
+  } catch (err) {
+    showError('No se pudo abrir la cámara: ' + err.message);
+  }
+}
+
+async function startMic() {
+  micStream?.getTracks().forEach((t) => t.stop());
+  micStream = null;
+  if (settings.mic === 'none') return;
+  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  try {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: settings.mic ? { ...audio, deviceId: { exact: settings.mic } } : audio,
+      });
+    } catch (err) {
+      if (!settings.mic || err.name === 'NotAllowedError') throw err;
+      micStream = await navigator.mediaDevices.getUserMedia({ audio });
+    }
+  } catch (err) {
+    showError('No se pudo abrir el micrófono: ' + err.message);
+  }
+}
+
+async function refreshDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  fillSelect($('selCam'), devices.filter((d) => d.kind === 'videoinput'), 'Sin cámara', settings.cam, camSrc);
+  fillSelect($('selMic'), devices.filter((d) => d.kind === 'audioinput'), 'Sin micrófono', settings.mic, micStream);
+}
+
+function fillSelect(select, devices, noneLabel, saved, active) {
+  const activeId = (active?.stream ?? active)?.getTracks()[0]?.getSettings().deviceId;
+  select.replaceChildren();
+  devices.forEach((d, i) => select.add(new Option(d.label || `Dispositivo ${i + 1}`, d.deviceId)));
+  select.add(new Option(noneLabel, 'none'));
+  select.value = saved === 'none' ? 'none' : (activeId || saved || devices[0]?.deviceId || 'none');
+}
+
+// ---------- Composición ----------
+
+function evenFit(w, h, maxW) {
+  const s = Math.min(1, maxW / w);
+  return [Math.round(w * s / 2) * 2, Math.round(h * s / 2) * 2];
+}
+
+function targetSize() {
+  const scr = sourceImage(screenSrc);
+  if (scr) return evenFit(scr.w, scr.h, 2560);
+  const cam = sourceImage(camSrc);
+  if (cam && settings.showCam) return evenFit(cam.w, cam.h, 1920);
+  return [1920, 1080];
+}
+
+function bubbleGeometry() {
+  const W = canvas.width, H = canvas.height;
+  const r = (settings.size / 100) * H / 2;
+  const m = H * 0.03;
+  const cx = Math.min(Math.max(settings.x * W, r + m), W - r - m);
+  const cy = Math.min(Math.max(settings.y * H, r + m), H - r - m);
+  return { cx, cy, r };
+}
+
+function draw() {
+  // Durante la grabación el tamaño del lienzo queda fijo.
+  if (!session) {
+    const [w, h] = targetSize();
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  const scr = sourceImage(screenSrc);
+  const cam = settings.showCam ? sourceImage(camSrc) : null;
+
+  if (scr) {
+    const s = Math.min(W / scr.w, H / scr.h);
+    const dw = scr.w * s, dh = scr.h * s;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(scr.img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  }
+
+  if (cam && scr) {
+    const { cx, cy, r } = bubbleGeometry();
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.35)';
+    ctx.shadowBlur = r * 0.18;
+    ctx.shadowOffsetY = r * 0.04;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    drawCover(cam, cx - r, cy - r, r * 2, r * 2);
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, r * 0.035);
+    ctx.strokeStyle = 'rgba(255,255,255,.9)';
+    ctx.stroke();
+  } else if (cam) {
+    drawCover(cam, 0, 0, W, H);
+  }
+}
+
+// Dibuja la imagen recortada para llenar el rectángulo (como object-fit: cover).
+function drawCover(src, x, y, w, h) {
+  const s = Math.max(w / src.w, h / src.h);
+  const sw = w / s, sh = h / s;
+  ctx.save();
+  if (settings.mirror) {
+    ctx.translate(x * 2 + w, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(src.img, (src.w - sw) / 2, (src.h - sh) / 2, sw, sh, x, y, w, h);
+  ctx.restore();
+}
+
+// Reloj en un worker: no se frena cuando la pestaña queda en segundo plano.
+const clock = new Worker(URL.createObjectURL(new Blob(
+  [`setInterval(() => postMessage(0), ${1000 / FPS});`],
+  { type: 'text/javascript' },
+)));
+clock.onmessage = () => {
+  draw();
+  if (session) updateTimer();
+};
+
+// ---------- Arrastrar la burbuja ----------
+
+let drag = null;
+
+function canvasPoint(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * canvas.width / rect.width,
+    y: (e.clientY - rect.top) * canvas.height / rect.height,
+  };
+}
+
+function overBubble(p) {
+  if (!screenSrc || !camSrc || !settings.showCam) return false;
+  const { cx, cy, r } = bubbleGeometry();
+  return Math.hypot(p.x - cx, p.y - cy) <= r;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  const p = canvasPoint(e);
+  if (!overBubble(p)) return;
+  const { cx, cy } = bubbleGeometry();
+  drag = { dx: p.x - cx, dy: p.y - cy };
+  canvas.setPointerCapture(e.pointerId);
+  canvas.className = 'grabbing';
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  const p = canvasPoint(e);
+  if (drag) {
+    settings.x = Math.min(Math.max((p.x - drag.dx) / canvas.width, 0), 1);
+    settings.y = Math.min(Math.max((p.y - drag.dy) / canvas.height, 0), 1);
+  } else {
+    canvas.className = overBubble(p) ? 'grab' : '';
+  }
+});
+
+function endDrag() {
+  if (!drag) return;
+  drag = null;
+  canvas.className = 'grab';
+  // Deja guardada la posición real (ya ajustada para que la burbuja no se salga).
+  const { cx, cy } = bubbleGeometry();
+  settings.x = cx / canvas.width;
+  settings.y = cy / canvas.height;
+  saveSettings();
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+// ---------- Grabación ----------
+
+function pickMime(hasAudio) {
+  const candidates = hasAudio
+    ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+    : ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+}
+
+function mixAudio(streams) {
+  const sources = streams.filter((s) => s && s.getAudioTracks().length);
+  if (!sources.length) return null;
+  const ac = new AudioContext();
+  const dest = ac.createMediaStreamDestination();
+  for (const s of sources) ac.createMediaStreamSource(new MediaStream(s.getAudioTracks())).connect(dest);
+  return { ac, track: dest.stream.getAudioTracks()[0] };
+}
+
+function timestamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+function makeRecorder(tracks, name, bitrate) {
+  const hasAudio = tracks.some((t) => t.kind === 'audio');
+  const mimeType = pickMime(hasAudio);
+  const rec = new MediaRecorder(new MediaStream(tracks), {
+    mimeType,
+    videoBitsPerSecond: bitrate,
+    audioBitsPerSecond: 192000,
+  });
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  rec.done = new Promise((resolve) => {
+    rec.onstop = () => {
+      const type = rec.mimeType || mimeType || 'video/webm';
+      const ext = type.startsWith('video/mp4') ? 'mp4' : 'webm';
+      resolve({ blob: new Blob(chunks, { type: type.split(';')[0] }), filename: `${name}.${ext}` });
+    };
+  });
+  rec.start(1000);
+  return rec;
+}
+
+async function countdown() {
+  const el = $('countdown');
+  el.hidden = false;
+  for (const n of [3, 2, 1]) {
+    el.textContent = n;
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  el.hidden = true;
+}
+
+async function startRecording() {
+  if (session || !(screenSrc || camSrc)) return;
+  $('btnRec').disabled = true;
+  await countdown();
+  if (!(screenSrc || camSrc)) { updateUI(); return; }
+
+  const base = 'grabacion-' + timestamp();
+  const mix = mixAudio([micStream, screenSrc?.stream]);
+  const canvasTrack = canvas.captureStream(FPS).getVideoTracks()[0];
+  const recorders = [
+    makeRecorder(mix ? [canvasTrack, mix.track] : [canvasTrack], base, canvas.height >= 1080 ? 12e6 : 8e6),
+  ];
+  if (settings.separate) {
+    if (screenSrc) recorders.push(makeRecorder(screenSrc.stream.getTracks(), base + '-pantalla', 10e6));
+    if (camSrc) {
+      const tracks = [camSrc.track, ...(micStream?.getAudioTracks() ?? [])];
+      recorders.push(makeRecorder(tracks, base + '-camara', 8e6));
+    }
+  }
+
+  session = { recorders, mix, canvasTrack, paused: false, elapsed: 0, last: performance.now() };
+  updateUI();
+}
+
+function togglePause() {
+  if (!session) return;
+  session.paused = !session.paused;
+  for (const r of session.recorders) {
+    if (session.paused && r.state === 'recording') r.pause();
+    if (!session.paused && r.state === 'paused') r.resume();
+  }
+  session.last = performance.now();
+  updateUI();
+}
+
+async function stopRecording() {
+  if (!session) return;
+  const { recorders, mix, canvasTrack } = session;
+  session = null;
+  for (const r of recorders) if (r.state !== 'inactive') r.stop();
+  updateUI();
+
+  const results = await Promise.all(recorders.map((r) => r.done));
+  canvasTrack.stop();
+  mix?.ac.close();
+  for (const res of results) addDownload(res);
+}
+
+function addDownload({ blob, filename }) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  const name = document.createElement('b');
+  name.textContent = filename;
+  const size = document.createElement('span');
+  size.textContent = (blob.size / 1e6).toFixed(1) + ' MB';
+  a.append(name, size);
+  $('downloads').prepend(a);
+  $('downloadsGroup').hidden = false;
+  a.click(); // descarga automática
+}
+
+function formatTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return (s >= 3600 ? Math.floor(s / 3600) + ':' : '') + p(Math.floor(s / 60) % 60) + ':' + p(s % 60);
+}
+
+function updateTimer() {
+  const now = performance.now();
+  if (!session.paused) session.elapsed += now - session.last;
+  session.last = now;
+  const t = formatTime(session.elapsed);
+  const label = session.paused ? `En pausa · ${t}` : `● ${t}`;
+  if ($('status').textContent !== label) {
+    $('status').textContent = label;
+    document.title = `${label} · Grabadora`;
+  }
+}
+
+// ---------- Interfaz ----------
+
+function showError(msg) {
+  $('error').textContent = msg;
+  $('error').hidden = false;
+}
+
+function hideError() {
+  $('error').hidden = true;
+}
+
+function updateUI() {
+  const rec = !!session;
+  $('btnRec').disabled = rec || !(screenSrc || camSrc);
+  $('btnPause').disabled = !rec;
+  $('btnStop').disabled = !rec;
+  $('btnPause').textContent = session?.paused ? 'Reanudar' : 'Pausar';
+  $('btnScreen').disabled = rec;
+  $('btnScreen').textContent = screenSrc ? 'Cambiar pantalla' : 'Elegir pantalla';
+  $('selCam').disabled = rec;
+  $('selMic').disabled = rec;
+  $('chkSeparate').disabled = rec;
+  $('placeholder').hidden = !!screenSrc || !!camSrc;
+  $('status').classList.toggle('live', rec);
+  if (!rec) {
+    $('status').textContent = 'Lista';
+    document.title = 'Grabadora';
+  }
+}
+
+$('btnScreen').onclick = pickScreen;
+$('btnRec').onclick = startRecording;
+$('btnPause').onclick = togglePause;
+$('btnStop').onclick = stopRecording;
+
+$('selCam').onchange = async (e) => {
+  settings.cam = e.target.value;
+  saveSettings();
+  await startCamera();
+  updateUI();
+};
+$('selMic').onchange = async (e) => {
+  settings.mic = e.target.value;
+  saveSettings();
+  await startMic();
+};
+
+$('chkCam').checked = settings.showCam;
+$('chkMirror').checked = settings.mirror;
+$('chkSeparate').checked = settings.separate;
+$('rngSize').value = settings.size;
+$('chkCam').onchange = (e) => { settings.showCam = e.target.checked; saveSettings(); };
+$('chkMirror').onchange = (e) => { settings.mirror = e.target.checked; saveSettings(); };
+$('chkSeparate').onchange = (e) => { settings.separate = e.target.checked; saveSettings(); };
+$('rngSize').oninput = (e) => { settings.size = +e.target.value; saveSettings(); };
+
+window.addEventListener('beforeunload', (e) => {
+  if (session) e.preventDefault();
+});
+
+navigator.mediaDevices.addEventListener('devicechange', () => refreshDevices().catch(() => {}));
+
+(async () => {
+  updateUI();
+  if (!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder) {
+    showError('Este navegador no permite grabar. Usa Chrome o Edge.');
+    $('btnScreen').disabled = true;
+    return;
+  }
+  await Promise.all([startCamera(), startMic()]);
+  await refreshDevices().catch(() => {});
+  updateUI();
+})();
+</script>
+</body>
+</html>
